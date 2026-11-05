@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Activity, ArrowDownToLine, ArrowLeft, ArrowRight, BarChart3, BatteryCharging, Building2, CalendarDays, ChevronDown, CircleHelp, FileUp, Factory, Home, Leaf, Menu, ReceiptText, Settings, ShieldCheck, Sun, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
+import EnergyOnboarding from "@/components/EnergyOnboarding";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { EM_DISCLAIMER, profiles, tariffs as demoTariffs, demoMonthly, demoIntervals, calculateBill, tariffForProfile, formatRupees, readManagerStorage, writeManagerStorage, downloadManagerCsv, carbonKg, demoEmissionFactor, type BillRecord, type ConsumerType, type EnergyProfile, type IntervalReading, type TariffPlan } from "@/data/energyManager";
 import "../styles/energy-manager.css";
@@ -18,6 +19,8 @@ export default function EnergyManager() {
   const [section, setSection] = useState("Home");
   const [subview, setSubview] = useState("Overview");
   const [profileId, setProfileId] = useState(() => readManagerStorage("profile", "home"));
+  const [onboarded, setOnboarded] = useState(() => readManagerStorage("onboarded", false));
+  const [customProfiles, setCustomProfiles] = useState<EnergyProfile[]>(() => readManagerStorage("profiles", []));
   const [bills, setBills] = useState<BillRecord[]>(() => readManagerStorage("bills", []));
   const [allTariffs, setAllTariffs] = useState<TariffPlan[]>(() => readManagerStorage("tariffs", demoTariffs));
   const [mobileNav, setMobileNav] = useState(false);
@@ -31,13 +34,13 @@ export default function EnergyManager() {
   const [reducePercent, setReducePercent] = useState(5);
   const [tariffBuilder, setTariffBuilder] = useState(false);
   const [planForm, setPlanForm] = useState({ name: "My custom tariff", category: "Household" as ConsumerType, region: "Maharashtra", discom: "DemoGrid West", fixed: 100, rate: 7.5, demand: 0, duty: 8, start: "2025-04-01", end: "2026-03-31" });
-  const profile = profiles.find(item => item.id === profileId) || profiles[0];
+  const profile = [...profiles, ...customProfiles].find(item => item.id === profileId) || profiles[0];
   const activeProduct = section === "Bills and Tariffs" && ["Bills & meter data", "Tariff setup"].includes(subview) ? "Data & Settings" : section === "Savings Opportunities" && subview === "Future choices" ? "Planning" : legacySection[section] || section;
   const visibleTab = ({ "Peak Usage": "Peak usage", "Demand Forecast": "Forecast", "Carbon Footprint": "Carbon", Reports: "Reports", Settings: "Profile & privacy" } as Record<string, string>)[section] || subview;
   const ownBills = bills.filter(item => item.profileId === profile.id);
   const history = ownBills.length ? ownBills : demoMonthly(profile);
   const usingDemo = ownBills.length === 0;
-  const selectedTariff = tariffForProfile(profile, history.at(-1)?.tariffId);
+  const selectedTariff = allTariffs.find(plan => plan.id === history.at(-1)?.tariffId) || tariffForProfile(profile, history.at(-1)?.tariffId);
   const intervals: IntervalReading[] = usingDemo ? demoIntervals(profile) : [];
   const peakKwh = intervals.filter(item => item.period === "Peak").reduce((sum, item) => sum + item.kwh, 0) * 4.3;
   const offPeakKwh = intervals.filter(item => item.period === "Off-peak").reduce((sum, item) => sum + item.kwh, 0) * 4.3;
@@ -101,6 +104,16 @@ export default function EnergyManager() {
     const plan: TariffPlan = { id, name: planForm.name, category: planForm.category, region: planForm.region, discom: planForm.discom, start: planForm.start, end: planForm.end, currency: "INR", fixedMonthly: Number(planForm.fixed), slabs: [{ upto: Infinity, rate: Number(planForm.rate) }], demandRate: Number(planForm.demand), dutyPercent: Number(planForm.duty), fuelRate: 0, subsidy: 0, sourceNote: "User-configured demo tariff" };
     const next = [...allTariffs, plan]; setAllTariffs(next); writeManagerStorage("tariffs", next); setTariffBuilder(false);
   };
+  const completeOnboarding = (newProfile: EnergyProfile, bill: BillRecord, plan: TariffPlan, demo: boolean) => {
+    setProfileId(newProfile.id); writeManagerStorage("profile", newProfile.id);
+    if (!demo) {
+      const nextProfiles = [...customProfiles, newProfile]; setCustomProfiles(nextProfiles); writeManagerStorage("profiles", nextProfiles);
+      const nextBills = [...bills, bill]; setBills(nextBills); writeManagerStorage("bills", nextBills);
+      const nextTariffs = [...allTariffs, plan]; setAllTariffs(nextTariffs); writeManagerStorage("tariffs", nextTariffs);
+    }
+    setOnboarded(true); writeManagerStorage("onboarded", true);
+  };
+  if (!onboarded) return <EnergyOnboarding onComplete={completeOnboarding}/>;
 
   return <div className="energy-manager-shell">
     <aside className={`em-sidebar ${mobileNav ? "open" : ""}`}><Link to="/" className="em-brand"><span><Zap size={19}/></span><div><b>EnergyPilot</b><small>Energy Manager</small></div></Link><div className="em-workspace-chip">CONSUMER WORKSPACE <i/></div><div className="em-profile-switch"><label>PROFILE<select value={profileId} onChange={event => updateProfile(event.target.value)}>{profiles.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label></div><nav className="em-nav">{nav.map((item, index) => { const Icon = icons[index]; return <button key={item} onClick={() => selectProduct(item)} className={activeProduct === item ? "active" : ""}><Icon size={16}/>{item}</button>; })}</nav><div className="em-sidebar-foot"><ShieldCheck size={15}/><span>Private demo workspace<small>Saved only in this browser</small></span></div></aside>
