@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Activity, ArrowRight, BarChart3, Bookmark, Download, FileText, Gauge, Layers3, Menu, RefreshCw, Search, Settings, ShieldCheck, SlidersHorizontal, X } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { downloadCsv, fmt, provider, type Observation } from "@/data/demoProvider";
+import { conversions, downloadCsv, fmt, provider, type Observation } from "@/data/demoProvider";
 import ScenarioWorkspace from "@/components/ScenarioWorkspace";
 import "../App.css";
 import "../styles/structured.css";
@@ -32,31 +32,37 @@ export default function Index() {
   const [scenarioName, setScenarioName] = useState("Planning scenario");
 
   const filtered = useMemo(() => provider.getObservations().filter(o => o.year === Number(year) && (region === "All India" || o.region === region) && (state === "All states" || o.state === state) && (category === "All categories" || o.technology === category) && (status === "All statuses" || o.status === status)), [year, region, state, category, status]);
-  const sum = (key: keyof Observation, rows = filtered) => rows.reduce((n, o) => n + (typeof o[key] === "number" ? o[key] as number : 0), 0);
+  const sum = (key: keyof Observation, rows = filtered) => {
+    if (key === "requirement" || key === "supplied") return provider.getDemandObservations().filter(o=>o.year===Number(year)&&(region==="All India"||o.region===region)&&(state==="All states"||o.state===state)).reduce((n,o)=>n+o[key==="requirement"?"requirementMU":"suppliedMU"],0);
+    if (key === "capacityMW") return provider.getCapacitySnapshot(Number(year),region,state);
+    if (key === "peak" || key === "peakMet") { const monthlyMu=sum("requirement")/12; return monthlyMu*1000/730*(key==="peak"?1.32:1.30); }
+    return rows.reduce((n, o) => n + (typeof o[key] === "number" ? o[key] as number : 0), 0);
+  };
   const rows = filtered.filter(o => `${o.state} ${o.station} ${o.technology} ${o.report}`.toLowerCase().includes(search.toLowerCase()));
   const trend = useMemo(() => {
-    const all = provider.getObservations().filter(o => o.year >= Number(year) - 1 && o.year <= Number(year) && (region === "All India" || o.region === region) && (state === "All states" || o.state === state));
     const map = new Map<string, { name: string; requirement: number; supplied: number; generation: number }>();
-    all.forEach(o => { const name = periodView === "Annual" ? String(o.year) : o.period; const p = map.get(name) || { name, requirement: 0, supplied: 0, generation: 0 }; p.requirement += o.requirement; p.supplied += o.supplied; p.generation += o.generationGWh; map.set(name, p); });
+    const get = (name:string) => { const item=map.get(name)||{name,requirement:0,supplied:0,generation:0};map.set(name,item);return item; };
+    provider.getDemandObservations().filter(o=>o.year>=Number(year)-1&&o.year<=Number(year)&&(region==="All India"||o.region===region)&&(state==="All states"||o.state===state)).forEach(o=>{const item=get(periodView==="Annual"?String(o.year):o.period);item.requirement+=o.requirementMU;item.supplied+=o.suppliedMU;});
+    provider.getObservations().filter(o=>o.year>=Number(year)-1&&o.year<=Number(year)&&(region==="All India"||o.region===region)&&(state==="All states"||o.state===state)).forEach(o=>{get(periodView==="Annual"?String(o.year):o.period).generation+=o.generationGWh;});
     return [...map.values()];
   }, [year, region, state, periodView]);
   const aggregate = (key: "region" | "state" | "technology" | "sector") => {
     const map = new Map<string, { name: string; generation: number; capacity: number; requirement: number; supplied: number }>();
-    filtered.forEach(o => { const name = o[key]; const item = map.get(name) || { name, generation: 0, capacity: 0, requirement: 0, supplied: 0 }; item.generation += o.generationGWh; item.capacity += o.capacityMW; item.requirement += o.requirement; item.supplied += o.supplied; map.set(name, item); });
+    filtered.forEach(o => { const name = o[key]; const item = map.get(name) || { name, generation: 0, capacity: 0, requirement: 0, supplied: 0 }; item.generation += o.generationGWh; if(o.month===1)item.capacity += o.capacityMW; item.requirement += o.requirement; item.supplied += o.supplied; map.set(name, item); });
     return [...map.values()];
   };
-  const reset = () => { setYear("2024"); setRegion("All India"); setState("All states"); setCategory("All categories"); setStatus("All statuses"); setPeriodView("Monthly"); setDimension("Overview"); setSearch(""); setScenarios([]); setViews([]); localStorage.removeItem("ep-scenarios"); localStorage.removeItem("ep-views"); };
+  const reset = () => { if((scenarios.length||views.length)&&!window.confirm("Reset demo filters and clear saved scenarios and views from this browser?"))return;setYear("2024"); setRegion("All India"); setState("All states"); setCategory("All categories"); setStatus("All statuses"); setPeriodView("Monthly"); setDimension("Overview"); setSearch(""); setScenarios([]); setViews([]); localStorage.removeItem("ep-scenarios"); localStorage.removeItem("ep-views"); };
   const saveScenario = (next: any[]) => { setScenarios(next); localStorage.setItem("ep-scenarios", JSON.stringify(next)); };
   const saveView = () => { const next = [...new Set([...views, `${area} · ${dimension} · ${year} · ${region} · ${state}`])]; setViews(next); localStorage.setItem("ep-views", JSON.stringify(next)); };
   const navigateArea = (next: string) => { setArea(next); setMobile(false); if (next === "Data & Administration") setTool("Data quality"); };
   const exportRows = () => downloadCsv(rows, `${area} / ${dimension}; period=${year} ${periodView}; geography=${region}/${state}; category=${category}; status=${status}`);
   const context = area === "Planning & Decisions" || area === "Data & Administration" ? tool : area;
   const headline = [
-    { title: "Electricity generated", value: fmt(sum("generationGWh") / 12000, 2), unit: "BU average / month", foot: "Stored as GWh · generation", key: "Supply" },
+    { title: "Electricity generated", value: fmt(conversions.gwhToBu(sum("generationGWh") / 12), 2), unit: "BU · average monthly generation", foot: "Stored canonically in GWh", key: "Supply" },
     { title: "Electricity demand", value: fmt(sum("requirement") / 12, 1), unit: "MU average / month", foot: "Energy requirement", key: "Demand" },
     { title: "Electricity supplied", value: fmt(sum("supplied") / 12, 1), unit: "MU average / month", foot: "Not generation", key: "Demand" },
-    { title: "Peak demand / met", value: `${fmt(sum("peak") / 12)} / ${fmt(sum("peakMet") / 12)} MW`, unit: "Monthly average · MW", foot: "Power, not energy", key: "Demand" },
-    { title: "Installed capacity", value: `${fmt(sum("capacityMW") / 12000, 1)} GW`, unit: "Synthetic asset-month proxy", foot: "Not available capacity", key: "Supply" },
+    { title: "Peak demand / met", value: `${fmt(sum("peak"))} / ${fmt(sum("peakMet"))} MW`, unit: "Estimated instantaneous power · monthly basis", foot: "Power, not energy", key: "Demand" },
+    { title: "Installed capacity", value: `${fmt(conversions.mwToGw(sum("capacityMW")), 1)} GW`, unit: "January snapshot · capacity", foot: "Not available capacity", key: "Supply" },
     { title: "Supply adequacy", value: `${(sum("supplied") / Math.max(1, sum("requirement")) * 100).toFixed(2)}%`, unit: "Supplied / requirement", foot: "Same selected period", key: "Demand" },
   ];
   const overview = context === "Overview", supply = context === "Supply", demand = context === "Demand", use = context === "Use", planning = area === "Planning & Decisions", admin = area === "Data & Administration";
