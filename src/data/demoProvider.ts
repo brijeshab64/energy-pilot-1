@@ -1,0 +1,29 @@
+export const regions = ["Northern", "Western", "Southern", "Eastern", "North-Eastern"] as const;
+export const states = ["Delhi", "Rajasthan", "Uttar Pradesh", "Gujarat", "Maharashtra", "Karnataka", "Tamil Nadu", "Telangana", "Odisha", "Assam"] as const;
+export const technologies = ["Coal", "Lignite", "Gas", "Nuclear", "Hydro", "Solar", "Wind", "Bio-power", "Small hydro", "Pumped storage", "Other"] as const;
+export type Observation = { period: string; year: number; month: number; region: string; state: string; technology: string; sector: string; station: string; unit: string; requirement: number; supplied: number; peak: number; peakMet: number; generationGWh: number; targetGWh: number; capacityMW: number; plf: number; availability: number; emissionsMt: number; status: string; source: string; report: string; quality: string; provenance: string };
+const shares = [0.52, .04, .025, .035, .105, .13, .095, .012, .008, .014, .012];
+const regionsForState: Record<string, string> = { Delhi:"Northern", Rajasthan:"Northern", "Uttar Pradesh":"Northern", Gujarat:"Western", Maharashtra:"Western", Karnataka:"Southern", "Tamil Nadu":"Southern", Telangana:"Southern", Odisha:"Eastern", Assam:"North-Eastern" };
+const stationNames: Record<string,string> = { Coal:"Thermal Station", Lignite:"Lignite Station", Gas:"Gas Station", Nuclear:"Nuclear Station", Hydro:"Hydro Station", Solar:"Solar Park", Wind:"Wind Farm", "Bio-power":"Bioenergy Station", "Small hydro":"Small Hydro Station", "Pumped storage":"Pumped Storage Station", Other:"Other Sources" };
+export const observations: Observation[] = [];
+for (let y = 2015; y <= 2024; y++) for (let m = 1; m <= 12; m++) for (let s = 0; s < states.length; s++) for (let t = 0; t < technologies.length; t++) {
+  const seasonal = 1 + .11 * Math.sin((m - 4) * Math.PI / 6);
+  const growth = 1 + (y - 2015) * .047;
+  const capacity = (480 + s * 73 + t * 112) * (1 + Math.max(0, y - 2017) * (t >= 5 ? .09 : .018));
+  const generated = capacity * 0.52 * seasonal * (1 + (s % 3) * .025) * growth * (t >= 5 ? .5 : 1);
+  const req = (920 + s * 91) * growth * seasonal;
+  const supplied = req * (.991 - (s % 4) * .0015);
+  const status = (y === 2024 && m >= 10) ? "Forecast" : (m === 12 ? "Revised" : m === 11 ? "Tentative" : "Demo actual");
+  observations.push({ period:`${y}-${String(m).padStart(2,"0")}`,year:y,month:m,region:regionsForState[states[s]],state:states[s],technology:technologies[t],sector:t % 3 === 0 ? "Central" : t % 3 === 1 ? "State" : "Private",station:`${states[s]} ${stationNames[technologies[t]]}`,unit:`${states[s].slice(0,2).toUpperCase()}-${String(t+1).padStart(2,"0")}`,requirement:req,supplied,generationGWh:generated,targetGWh:generated*1.035,peak:req*2.35,peakMet:req*2.31,capacityMW:capacity,plf:t<4 ? .62 + (s%4)*.025 : .34 + (s%3)*.035,availability:.88+(s%4)*.018,emissionsMt: t<3 ? generated*.00082 : generated*.00002,status,source:"EnergyPilot synthetic dataset",report:`EP-DEMO-${y}-${String(m).padStart(2,"0")}`,quality:(s+m+t)%17===0?"Review flag":"Passed",provenance:`Synthetic demo seed · ${y}-${m} · ${states[s]} · ${technologies[t]}` });
+}
+export const metricDictionary = [
+ {name:"Energy requirement",unit:"MU",definition:"Synthetic monthly energy requirement.",aggregation:"Sum across disjoint geographies; never across periods."},
+ {name:"Energy supplied",unit:"MU",definition:"Synthetic energy supplied to meet requirement; distinct from generation.",aggregation:"Sum across disjoint geographies; never across periods."},
+ {name:"Generation",unit:"GWh",definition:"Synthetic gross generation output, stored in GWh.",aggregation:"Sum across disjoint units and geographies."},
+ {name:"Installed capacity",unit:"MW",definition:"Synthetic installed nameplate capacity; not available or dependable capacity.",aggregation:"Sum across disjoint assets; snapshot only."},
+ {name:"Thermal PLF",unit:"%",definition:"Generation divided by assumed maximum possible output for thermal technologies.",aggregation:"Weighted mean; not additive."},
+ {name:"Estimated emissions",unit:"Mt CO₂e",definition:"Assumption-based synthetic estimate; not measured emissions.",aggregation:"Sum across disjoint technologies and geographies."}
+];
+export const provider = { getObservations: () => observations, getMetrics: () => metricDictionary, getRegions: () => [...regions], getStates: () => [...states], getTechnologies: () => [...technologies] };
+export const fmt = (n:number, digits=0) => new Intl.NumberFormat("en-IN",{maximumFractionDigits:digits,minimumFractionDigits:digits}).format(n);
+export function downloadCsv(rows: Observation[], filters: string) { const metadata = `# DEMO DATA — SYNTHETIC, NOT OFFICIAL\n# Filters: ${filters}\n# Units: requirement/supplied MU; generation GWh; capacity MW\n# Exported: ${new Date().toISOString()}\n`; const headers = Object.keys(rows[0] ?? {}) as (keyof Observation)[]; const csv = metadata + [headers.join(","),...rows.map(r=>headers.map(h=>JSON.stringify(r[h])).join(","))].join("\n"); const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"})); a.download="energypilot-synthetic-demo.csv"; a.click(); URL.revokeObjectURL(a.href); }
