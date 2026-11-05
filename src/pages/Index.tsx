@@ -5,6 +5,7 @@ import { downloadCsv, fmt, provider, type Observation } from "@/data/demoProvide
 import ScenarioWorkspace from "@/components/ScenarioWorkspace";
 import "../App.css";
 import "../styles/structured.css";
+import "../styles/alignment.css";
 
 const areas = ["Overview", "Supply", "Demand", "Use"];
 const supplyDimensions = ["Overview", "By source / technology", "By geography", "By sector / ownership", "By plant", "Capacity", "Performance"];
