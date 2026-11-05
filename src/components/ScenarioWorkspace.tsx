@@ -1,8 +1,9 @@
-import { useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { AlertTriangle, Copy, Download, Info, RotateCcw, Save, Trash2 } from "lucide-react";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { fmt, provider } from "@/data/demoProvider";
-import { createDefaultScenario, defaultInputs, exportScenario, formatScenarioUnit, modelVersion, optionalInputs, parameterGroups, plainConclusion, runBaseline, runScenario, validateInputs, type ScenarioConfig, type ScenarioInputs, type ScenarioYear } from "@/data/scenarioModel";
+import { fmt } from "@/data/demoProvider";
+import { activeProvider as provider, getDataMode } from "@/data/activeData";
+import { createDefaultScenario, defaultInputs, exportScenario, formatScenarioUnit, modelVersion, optionalInputs, parameterGroups, plainConclusion, runBaseline, runScenario, sourceGroups, validateInputs, type ScenarioConfig, type ScenarioInputs, type ScenarioYear } from "@/data/scenarioModel";
 import "../styles/scenario.css";
 
 const horizons = [1,3,5,10] as const;
@@ -18,10 +19,13 @@ export default function ScenarioWorkspace({saved,onSave}:{saved:ScenarioConfig[]
  const [view,setView]=useState("Chart");
  const [expandedFormula,setExpandedFormula]=useState<string|null>(null);
  const validSaved=saved.filter(s=>s.inputs&&s.startYear&&s.horizon);
+ const dataMode=getDataMode();
+ const availableYears=[...new Set(provider.getObservations().map(row=>row.year))].sort((a,b)=>b-a);
+ const availableYearsKey=availableYears.join(",");
  const selectedBaseline=validSaved.find(s=>s.name===baselineId);
- const baselineConfig=selectedBaseline||{...createDefaultScenario(),name:"Current demo baseline",inputs:structuredClone(defaultInputs)};
- const baseline=useMemo(()=>selectedBaseline?runScenario({...baselineConfig,startYear:config.startYear,horizon:config.horizon,region:config.region,state:config.state}):runBaseline({...config,inputs:structuredClone(defaultInputs)}),[baselineConfig,selectedBaseline,config.startYear,config.horizon,config.region,config.state]);
- const results=useMemo(()=>runScenario(config),[config]);
+ const baselineConfig=selectedBaseline||{...createDefaultScenario(),name:"Current data baseline",inputs:structuredClone(defaultInputs)};
+ const baseline=useMemo(()=>selectedBaseline?runScenario({...baselineConfig,startYear:config.startYear,horizon:config.horizon,region:config.region,state:config.state}):runBaseline({...config,inputs:structuredClone(defaultInputs)}),[baselineConfig,selectedBaseline,config.startYear,config.horizon,config.region,config.state,dataMode]);
+ const results=useMemo(()=>runScenario(config),[config,dataMode]);
  const comparisons=comparisonIds.map(id=>validSaved.find(s=>s.name===id)).filter((s):s is ScenarioConfig=>Boolean(s)).slice(0,2);
  const comparisonResults=comparisons.map(s=>runScenario({...s,startYear:config.startYear,horizon:config.horizon,region:config.region,state:config.state}));
  const issues=validateInputs(config.inputs,config);
@@ -30,6 +34,7 @@ export default function ScenarioWorkspace({saved,onSave}:{saved:ScenarioConfig[]
  const update=(key:string,value:number)=>setConfig(c=>({...c,inputs:{...c.inputs,[key]:value}}));
  const updateMap=(key:"additions"|"retirements",source:string,value:number)=>setConfig(c=>({...c,inputs:{...c.inputs,[key]:{...c.inputs[key],[source]:value}}}));
  const setField=(key:keyof ScenarioConfig,value:any)=>setConfig(c=>({...c,[key]:value}));
+ useEffect(()=>{if(availableYears.length&&!availableYears.includes(config.startYear))setConfig(c=>({...c,startYear:availableYears[0]}));},[availableYearsKey,config.startYear]);
  const save=()=>{const item=structuredClone(config);onSave([...saved.filter(s=>s.name!==item.name&&s.name!==loadedName),item]);setLoadedName(item.name);};
  const load=(item:ScenarioConfig)=>{setConfig(structuredClone(item));setLoadedName(item.name);};
  const duplicate=(item:ScenarioConfig)=>{const copy=structuredClone(item);copy.name=`${copy.name} copy`;onSave([...saved,copy]);};
@@ -45,10 +50,10 @@ export default function ScenarioWorkspace({saved,onSave}:{saved:ScenarioConfig[]
    <label>Scenario name<input value={config.name} onChange={e=>setField("name",e.target.value)}/></label>
    <label>Geography<select value={config.region} onChange={e=>setConfig(c=>({...c,region:e.target.value,state:"All states"}))}><option>All India</option>{provider.getRegions().map(r=><option key={r}>{r}</option>)}</select></label>
    <label>State / UT<select value={config.state} onChange={e=>setField("state",e.target.value)}><option>All states</option>{provider.getStates().map(s=><option key={s}>{s}</option>)}</select></label>
-   <label>Starting period<select value={config.startYear} onChange={e=>setField("startYear",Number(e.target.value))}>{Array.from({length:10},(_,i)=>2024-i).map(y=><option key={y}>{y}</option>)}</select></label>
+   <label>Starting period<select value={config.startYear} onChange={e=>setField("startYear",Number(e.target.value))}>{availableYears.map(y=><option key={y}>{y}</option>)}</select></label>
    <label>Horizon<select value={config.horizon} onChange={e=>setField("horizon",Number(e.target.value))}>{horizons.map(n=><option key={n}>{n}</option>)}</select></label>
    <label>Scenario type<select value={config.type} onChange={e=>setField("type",e.target.value)}>{types.map(t=><option key={t}>{t}</option>)}</select></label>
-   <label>Baseline<select value={baselineId} onChange={e=>setBaselineId(e.target.value)}><option value="demo">Current demo baseline</option>{validSaved.filter(s=>s.name!==config.name).map(s=><option key={s.name}>{s.name}</option>)}</select></label>
+   <label>Baseline<select value={baselineId} onChange={e=>setBaselineId(e.target.value)}><option value="demo">Current selected data baseline</option>{validSaved.filter(s=>s.name!==config.name).map(s=><option key={s.name}>{s.name}</option>)}</select></label>
    <label>Compare up to 2 saved scenarios<select multiple value={comparisonIds} onChange={comparisonSelect}>{validSaved.filter(s=>s.name!==config.name&&s.name!==baselineId).map(s=><option key={s.name} value={s.name}>{s.name}</option>)}</select></label>
    </div><label className="scenario-note">Policy question / note<textarea value={config.note||""} onChange={e=>setField("note",e.target.value)} placeholder="Optional planning question or context"/></label>
    <div className="scenario-actions"><button className="primary-btn" onClick={save}><Save size={15}/> Save scenario</button><button className="secondary-btn" onClick={reset}><RotateCcw size={14}/> Reset assumptions</button><button className="secondary-btn" onClick={()=>exportScenario(config,results,baseline)}><Download size={14}/> Export assumptions + results</button></div>

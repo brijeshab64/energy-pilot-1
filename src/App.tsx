@@ -15,7 +15,7 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <Link to="/data-import" className="fixed bottom-5 right-5 z-50 rounded-full bg-[#147d78] px-4 py-3 text-sm font-semibold text-white shadow-lg hover:bg-[#116c67]">Monthly data staging</Link>
+        <Link to="/data-import" className="data-source-link fixed bottom-5 right-5 z-50 rounded-full bg-[#147d78] px-4 py-3 text-sm font-semibold text-white shadow-lg hover:bg-[#116c67]">Monthly data staging</Link>
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/data-import" element={<MonthlyImport />} />

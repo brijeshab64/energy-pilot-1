@@ -1,4 +1,4 @@
-import type { DemandObservation, Observation } from "./demoProvider";
+import { regions, states, technologies, type DemandObservation, type Observation } from "./demoProvider";
 
 export type ImportedDataset = { supply: Observation[]; demand: DemandObservation[]; importedAt: string; supplySource: string; demandSource: string };
 const DB_NAME = "energypilot-data";
@@ -100,7 +100,7 @@ export function parseSupplyCsv(text: string): Observation[] {
     if (seen.has(key)) throw new Error(`Row ${line}: duplicate supply record for ${state}, ${technology}, ${period}.`);
     seen.add(key);
     const [year, month] = period.split("-").map(Number);
-    return { period, year, month, region, state, technology, sector: "Reported", station: `${state} ${technology}`, unit: "Imported", requirement: 0, supplied: 0, peak: 0, peakMet: 0, generationGWh, targetGWh: 0, capacityMW, plf: 0, availability: 0, emissionsMt: 0, status: "Imported · source not independently verified", source, report, quality: "Schema checked; source not verified", provenance: `User-imported monthly report · ${source} · ${report}` };
+    return { period, year, month, region, state, technology, sector: "Reported", station: `${state} ${technology}`, unit: "Imported", requirement: Number.NaN, supplied: Number.NaN, peak: Number.NaN, peakMet: Number.NaN, generationGWh, targetGWh: Number.NaN, capacityMW, plf: Number.NaN, availability: Number.NaN, emissionsMt: Number.NaN, status: "Imported · source not independently verified", source, report, quality: "Schema checked; source not verified", provenance: `User-imported monthly report · ${source} · ${report}` };
   });
 }
 
@@ -116,21 +116,30 @@ export function parseDemandCsv(text: string): DemandObservation[] {
     const requirementMU = numberValue(row, "requirement_mu", line);
     const suppliedMU = numberValue(row, "supplied_mu", line);
     const peakMW = numberValue(row, "peak_mw", line);
+    const peakMetMW = numberValue(row, "peak_met_mw", line);
     if (suppliedMU > requirementMU) throw new Error(`Row ${line}: supplied_mu cannot exceed requirement_mu in this import schema.`);
     const key = `${period}|${state}`;
     if (seen.has(key)) throw new Error(`Row ${line}: duplicate demand record for ${state}, ${period}.`);
     seen.add(key);
     const [year, month] = period.split("-").map(Number);
-    return { period, year, month, region, state, requirementMU, suppliedMU, peakMW, status: "Imported · source not independently verified", source, report, quality: "Schema checked; source not verified", provenance: `User-imported monthly report · ${source} · ${report}` };
+    return { period, year, month, region, state, requirementMU, suppliedMU, peakMW, peakMetMW, status: "Imported · source not independently verified", source, report, quality: "Schema checked; source not verified", provenance: `User-imported monthly report · ${source} · ${report}` };
   });
 }
 
 export function validateImportedPair(supply: Observation[], demand: DemandObservation[]) {
   if (!supply.length || !demand.length) throw new Error("Both supply and demand CSVs are required for a staged monthly dataset.");
+  if (!supply.some(row=>row.generationGWh>0)||!supply.some(row=>row.capacityMW>0)) throw new Error("Supply data must include non-zero generation and capacity values; template placeholders cannot be activated.");
+  if (demand.some(row=>row.requirementMU<=0||!row.peakMW||row.peakMW<=0||!row.peakMetMW||row.peakMetMW<=0)) throw new Error("Demand data must include positive requirement, peak-demand, and peak-met values; template placeholders cannot be activated.");
+  if (demand.some(row=>row.peakMetMW!>row.peakMW!)) throw new Error("Peak-met power cannot exceed peak-demand power in the imported data.");
   const subtotalLabels = new Set(["all india", "india", "national", "all states", "total", "subtotal"]);
+  const knownRegions = new Set<string>(regions);
+  const knownStates = new Set<string>(states);
+  const knownTechnologies = new Set<string>(technologies);
   const regionByState = new Map<string, string>();
   for (const row of [...supply, ...demand]) {
     if (!row.region || !row.state || subtotalLabels.has(row.state.toLowerCase())) throw new Error("Every row must represent a state or UT with its region. Regional and national subtotal rows are not allowed with state records.");
+    if (!knownStates.has(row.state) || !knownRegions.has(row.region)) throw new Error(`Unknown India geography mapping for ${row.state} / ${row.region}. Use the app's canonical state and region names.`);
+    if ("technology" in row && !knownTechnologies.has(row.technology)) throw new Error(`Unknown technology ${row.technology}. Use one of the app's canonical technology names.`);
     const knownRegion = regionByState.get(row.state);
     if (knownRegion && knownRegion !== row.region) throw new Error(`Region mismatch for ${row.state}: found both ${knownRegion} and ${row.region}.`);
     regionByState.set(row.state, row.region);
@@ -143,4 +152,4 @@ export function validateImportedPair(supply: Observation[], demand: DemandObserv
 }
 
 export const supplyTemplate = "period,region,state,technology,generation_gwh,capacity_mw,source,report\n2024-01,Western,Gujarat,Solar,0,0,CEA report title,report URL or identifier";
-export const demandTemplate = "period,region,state,requirement_mu,supplied_mu,peak_mw,source,report\n2024-01,Western,Gujarat,0,0,0,Grid-India report title,report URL or identifier";
+export const demandTemplate = "period,region,state,requirement_mu,supplied_mu,peak_mw,peak_met_mw,source,report\n2024-01,Western,Gujarat,0,0,0,0,Grid-India report title,report URL or identifier";
