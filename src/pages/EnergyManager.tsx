@@ -42,12 +42,10 @@ export default function EnergyManager() {
 
   const completeOnboarding = (newProfile: EnergyProfile, bill: BillRecord, tariffPlan: TariffPlan | null, demo: boolean) => {
     setProfileId(newProfile.id); writeManagerStorage("profile", newProfile.id);
-    if (!demo) {
-      const nextProfiles = [...profilesSaved, newProfile]; setProfilesSaved(nextProfiles); writeManagerStorage("profiles", nextProfiles);
-      const nextBills = [...bills, bill]; setBills(nextBills); writeManagerStorage("bills", nextBills);
-      if (tariffPlan) { const nextTariffs = [...tariffs, tariffPlan]; setTariffs(nextTariffs); writeManagerStorage("tariffs", nextTariffs); }
-      setDocuments(readManagerStorage("bill-documents", []));
-    }
+    if (!demo) { const nextProfiles = [...profilesSaved, newProfile]; setProfilesSaved(nextProfiles); writeManagerStorage("profiles", nextProfiles); }
+    const nextBills = [...bills, bill]; setBills(nextBills); writeManagerStorage("bills", nextBills);
+    if (tariffPlan && !tariffs.some(item => item.id === tariffPlan.id)) { const nextTariffs = [...tariffs, tariffPlan]; setTariffs(nextTariffs); writeManagerStorage("tariffs", nextTariffs); }
+    setDocuments(readManagerStorage("bill-documents", []));
     setOnboarded(true); writeManagerStorage("onboarded", true);
   };
   const appendUploadedBill = (_newProfile: EnergyProfile, bill: BillRecord, _tariffPlan: TariffPlan | null, _demo: boolean) => {
