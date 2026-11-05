@@ -65,4 +65,4 @@ export default function EnergyOnboarding({ onComplete }: Props) {
     </div>
   </main>;
 }
-function Field({label,children}:{label:string;children:React.ReactNode}){return <label className="block text-sm font-medium text-[#456158]">{label}<div className="mt-1.5 [&_input]:w-full [&_input]:rounded-xl [&_input]:border [&_input]:border-[#dce7e0] [&_input]:bg-white [&_input]:px-3 [&_input]:py-2.5 [&_input]:text-sm [&_input]:text-[#183d34] [&_input]:outline-none [&_input]:focus:border-[#39816d] [&_input]:focus:ring-2 [&_input]:focus:ring-[#d5ece0]">{children}</div></label>;}
+function Field({label,children}:{label:string;children:ReactNode}){return <label className="block text-sm font-medium text-[#456158]">{label}<div className="mt-1.5 [&_input]:w-full [&_input]:rounded-xl [&_input]:border [&_input]:border-[#dce7e0] [&_input]:bg-white [&_input]:px-3 [&_input]:py-2.5 [&_input]:text-sm [&_input]:text-[#183d34] [&_input]:outline-none [&_input]:focus:border-[#39816d] [&_input]:focus:ring-2 [&_input]:focus:ring-[#d5ece0]">{children}</div></label>;}
