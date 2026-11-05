@@ -3,12 +3,13 @@ import { Activity, AlertTriangle, Info } from "lucide-react";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { activeProvider, getDataMode } from "@/data/activeData";
 import { fmt } from "@/data/demoProvider";
-import { buildMonthlySeries, forecastGrowthPercent, forecastMethodDescription, makeForecast, runBacktest, targetUnit, type ForecastTarget } from "@/data/forecastModel";
+import { buildMonthlySeries, compareForecastModels, forecastGrowthPercent, forecastMethodDescription, makeForecast, runBacktest, targetUnit, type ForecastTarget } from "@/data/forecastModel";
 
 export default function ForecastWorkspace({region,state,target,setTarget,horizon,setHorizon,dataVersion}:{region:string;state:string;target:ForecastTarget;setTarget:(value:ForecastTarget)=>void;horizon:number;setHorizon:(value:number)=>void;dataVersion:number}) {
   const mode = getDataMode();
   const series = useMemo(() => buildMonthlySeries(target, activeProvider.getObservations(), activeProvider.getDemandObservations(), region, state), [target,region,state,dataVersion,mode]);
   const forecast = useMemo(() => makeForecast(series,horizon), [series,horizon]);
+  const modelComparison = useMemo(() => compareForecastModels(series), [series]);
   const backtest = useMemo(() => runBacktest(series), [series]);
   const chartRows = forecast.map(point => ({ period:point.period, history:point.kind==="history"?point.value:undefined, forecast:point.kind==="forecast"?point.value:undefined }));
   const backtestRows = backtest?.points.map(point => ({...point})) || [];
@@ -27,7 +28,7 @@ export default function ForecastWorkspace({region,state,target,setTarget,horizon
         <h3>Forecast setup</h3>
         <label className="form-label">Target metric<select value={target} onChange={event=>setTarget(event.target.value as ForecastTarget)}><option>Energy requirement</option><option>Energy supplied</option><option>Generation</option></select></label>
         <label className="form-label">Forecast horizon · {horizon} months<input type="range" min="3" max="24" value={horizon} onChange={event=>setHorizon(Number(event.target.value))}/></label>
-        <div className="model-meta"><b>Method</b><span>Monthly seasonality + linear trend · v1.0</span><b>Scope</b><span>{region} / {state}</span><b>Input coverage</b><span>{series.length} months · {series[0]?.period||"—"} to {lastObserved?.period||"—"}</span><b>Calculation status</b><span>{enough?"Calculated from available series":"Insufficient history"}</span><b>Source mode</b><span>{isDemo?"Synthetic demo dataset":"Imported monthly dataset"}</span></div>
+        <div className="model-meta"><b>Method</b><span>{modelComparison ? `Selected by rolling validation: ${modelComparison.selected}` : "Seasonal trend benchmark · no model-selection evidence"}</span><b>Scope</b><span>{region} / {state}</span><b>Input coverage</b><span>{series.length} months · {series[0]?.period||"—"} to {lastObserved?.period||"—"}</span><b>Calculation status</b><span>{enough?"Calculated from available series":"Insufficient history"}</span><b>Source mode</b><span>{isDemo?"Synthetic demo dataset":"Imported monthly dataset"}</span></div>
       </section>
       <section className="panel">
         <div className="panel-head"><div><h3>{target} · monthly history and projection</h3><p>{region}{state!=="All states"?` / ${state}`:""} · {unit} · history through {lastObserved?.period||"—"}</p></div><span className="tiny-demo">{isDemo?"SYNTHETIC MODEL":"MODEL OUTPUT"}</span></div>

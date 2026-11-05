@@ -1,5 +1,5 @@
 import type { DemandObservation, Observation } from "./demoProvider";
-import { buildMonthlySeries, forecastGrowthPercent, makeForecast, type ForecastTarget } from "./forecastModel";
+import { buildMonthlySeries, compareForecastModels, forecastGrowthPercent, makeForecast } from "./forecastModel";
 
 export type Recommendation = {
   id: string;
@@ -10,26 +10,18 @@ export type Recommendation = {
   action: string;
   reliability: string;
   reliabilityDetail: string;
+  selectedModel: string;
 };
 
 function validationSummary(series: ReturnType<typeof buildMonthlySeries>) {
-  if (series.length < 60) return { label: "Insufficient validation history", detail: "At least 60 contiguous months are needed for three rolling 12-month holdouts with 24 months of training." };
-  const testStart = series.length - 12;
-  const origins = [testStart - 36, testStart - 24, testStart - 12];
-  const errors: number[] = [];
-  for (const origin of origins) {
-    const training = series.slice(0, origin);
-    const actual = series.slice(origin, origin + 12);
-    const projected = makeForecast(training, 12).filter(point => point.kind === "forecast");
-    if (actual.length !== 12 || projected.length !== 12) continue;
-    const mape = actual.reduce((sum, row, index) => sum + Math.abs(row.value - projected[index].value) / Math.max(row.value, 1) * 100, 0) / 12;
-    errors.push(mape);
-  }
-  if (errors.length !== 3) return { label: "Validation unavailable", detail: "Three complete rolling holdouts could not be calculated." };
-  const mean = errors.reduce((sum, error) => sum + error, 0) / errors.length;
-  const spread = Math.max(...errors) - Math.min(...errors);
+  const comparison = compareForecastModels(series);
+  if (!comparison) return { label: "Insufficient model-selection evidence", detail: `${series.length} contiguous months; need 72 for three 12-month holdouts with 24-month minimum training windows.`, selectedModel: "Seasonal trend benchmark" };
+  const selected = comparison.models.find(model => model.name === comparison.selected)!;
+  const mean = selected.meanMape;
+  const spread = Math.max(...selected.foldMape) - Math.min(...selected.foldMape);
   const label = mean <= 5 && spread <= 5 ? "Stable on historical holdouts" : mean <= 12 ? "Mixed historical holdout results" : "Weak historical holdout results";
-  return { label, detail: `Three rolling 12-month holdouts · mean MAPE ${mean.toFixed(1)}% · range ${Math.min(...errors).toFixed(1)}–${Math.max(...errors).toFixed(1)}%. Historical fit only; not a guarantee.` };
+  const comparisonText = comparison.models.map(model => `${model.name}: ${model.meanMape.toFixed(1)}%`).join("; ");
+  return { label, selectedModel: comparison.selected, detail: `Selected by lowest mean MAPE across ${comparison.folds} rolling 12-month holdouts · ${comparisonText}. Selected-model fold range ${Math.min(...selected.foldMape).toFixed(1)}–${Math.max(...selected.foldMape).toFixed(1)}%. Historical fit only.` };
 }
 
 export function buildRecommendations(supply: Observation[], demand: DemandObservation[], region: string, state: string): Recommendation[] {
@@ -50,9 +42,9 @@ export function buildRecommendations(supply: Observation[], demand: DemandObserv
     const latestSupply = supplySeries.slice(-12).reduce((sum, point) => sum + point.value, 0);
     const currentCoverage = current > 0 ? latestSupply / current * 100 : NaN;
     recs.push({
-      id: "demand-path", title: "Review the forward demand and supplied-energy path", priority: projectedCoverage < currentCoverage - 0.2 ? "Review soon" : Math.abs(demandGrowth) >= 6 ? "Monitor" : "Informational", geography: scope,
+      id: "demand-path", title: "Review the forward demand and supplied-energy path", priority: validation.label === "Stable on historical holdouts" ? projectedCoverage < currentCoverage - 0.2 ? "Review soon" : Math.abs(demandGrowth) >= 6 ? "Monitor" : "Informational" : validation.label === "Mixed historical holdout results" && Math.abs(demandGrowth) >= 6 ? "Monitor" : "Informational", geography: scope,
       evidence: [`Forecast demand change: ${demandGrowth >= 0 ? "+" : ""}${demandGrowth.toFixed(1)}% over the next 12 months versus the latest 12-month total.`, `Modeled supplied / requirement: ${currentCoverage.toFixed(1)}% recent history; ${projectedCoverage.toFixed(1)}% projected.`],
-      action: "Review regional demand assumptions, planned procurement, and demand-side measures before operational use.", reliability: validation.label, reliabilityDetail: validation.detail,
+      action: "Review regional demand assumptions, planned procurement, and demand-side measures before operational use.", reliability: validation.label, reliabilityDetail: validation.detail, selectedModel: validation.selectedModel,
     });
   }
 
@@ -64,9 +56,9 @@ export function buildRecommendations(supply: Observation[], demand: DemandObserv
   if (state === "All states" && regionalGrowth.length) {
     const top = regionalGrowth[0];
     const regionValidation = validationSummary(top.series);
-    recs.push({ id: "regional-growth", title: "Prioritize a regional demand review", priority: (top.growth || 0) >= 6 ? "Monitor" : "Informational", geography: top.name,
+    recs.push({ id: "regional-growth", title: "Prioritize a regional demand review", priority: regionValidation.label === "Stable on historical holdouts" && (top.growth || 0) >= 6 ? "Monitor" : "Informational", geography: top.name,
       evidence: [`Highest modeled 12-month demand growth among available regions: ${(top.growth || 0) >= 0 ? "+" : ""}${(top.growth || 0).toFixed(1)}%.`, `Computed from the region's monthly requirement series; no causal drivers are modeled.`],
-      action: `Compare state-level assumptions and local plans within ${top.name}; do not treat this ranking as a capacity requirement.`, reliability: regionValidation.label, reliabilityDetail: regionValidation.detail });
+      action: `Compare state-level assumptions and local plans within ${top.name}; do not treat this ranking as a capacity requirement.`, reliability: regionValidation.label, reliabilityDetail: regionValidation.detail, selectedModel: regionValidation.selectedModel });
   }
 
   const technologyRows = supply.filter(row => (region === "All India" || row.region === region) && (state === "All states" || row.state === state));
@@ -78,7 +70,7 @@ export function buildRecommendations(supply: Observation[], demand: DemandObserv
     const share = total > 0 ? renewable / total * 100 : NaN;
     if (Number.isFinite(share)) recs.push({ id: "mix-review", title: "Check generation-mix assumptions against operational constraints", priority: "Informational", geography: scope,
       evidence: [`Illustrative renewable-category share in ${latestPeriod}: ${share.toFixed(1)}% of modeled generation.`, "This is a generation-energy share, not installed capacity or firm/dispatchable supply."],
-      action: "Validate resource, transmission, storage, and balancing assumptions against an authoritative regional dataset.", reliability: "Descriptive only", reliabilityDetail: "This share is a calculation from the active records, not a forecast or reliability estimate." });
+      action: "Validate resource, transmission, storage, and balancing assumptions against an authoritative regional dataset.", reliability: "Descriptive only", reliabilityDetail: "This share is a calculation from the active records, not a forecast or reliability estimate.", selectedModel: "Not applicable" });
   }
   return recs;
 }
@@ -86,5 +78,3 @@ export function buildRecommendations(supply: Observation[], demand: DemandObserv
 export function recommendationSourceLabel(isSynthetic: boolean) {
   return isSynthetic ? "Synthetic assumptions · not real-world recommendations" : "Imported data · source not independently verified";
 }
-
-export type RecommendationTarget = ForecastTarget;
