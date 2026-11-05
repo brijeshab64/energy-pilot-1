@@ -3,12 +3,14 @@ import { Activity, ArrowRight, BarChart3, Bookmark, Download, FileText, Gauge, L
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { conversions, downloadCsv, fmt, type Observation } from "@/data/demoProvider";
 import { activeProvider as provider, getDataMode, loadActiveDataset } from "@/data/activeData";
+import "@/data/syntheticChecks";
 import ScenarioWorkspace from "@/components/ScenarioWorkspace";
 import ForecastWorkspace from "@/components/ForecastWorkspace";
 import "../App.css";
 import "../styles/structured.css";
 import "../styles/alignment.css";
 import "../styles/source-mode.css";
+import "../styles/synthetic-history.css";
 
 const areas = ["Overview", "Supply", "Demand", "Use"];
 const supplyDimensions = ["Overview", "By source / technology", "By geography", "By sector / ownership", "By plant", "Capacity", "Performance"];
@@ -18,7 +20,7 @@ export default function Index() {
   const [area, setArea] = useState("Overview");
   const [tool, setTool] = useState("Forecasting");
   const [dimension, setDimension] = useState("Overview");
-  const [year, setYear] = useState("2024");
+  const [year, setYear] = useState("2025");
   const [region, setRegion] = useState("All India");
   const [state, setState] = useState("All states");
   const [category, setCategory] = useState("All categories");
@@ -62,7 +64,7 @@ export default function Index() {
     if((key==="region"||key==="state")&&getDataMode().startsWith("IMPORTED"))provider.getDemandObservations().filter(o=>o.year===Number(year)&&(region==="All India"||o.region===region)&&(state==="All states"||o.state===state)).forEach(o=>{const name=o[key];const item=map.get(name)||{name,generation:0,capacity:0,requirement:0,supplied:0};item.requirement+=o.requirementMU;item.supplied+=o.suppliedMU;map.set(name,item);});
     return [...map.values()];
   };
-  const reset = () => { if((scenarios.length||views.length)&&!window.confirm("Reset filters and clear saved scenarios and views from this browser?"))return;setYear(getDataMode().startsWith("IMPORTED")?String(Math.max(...provider.getObservations().map(o=>o.year))):"2024"); setRegion("All India"); setState("All states"); setCategory("All categories"); setStatus("All statuses"); setPeriodView("Monthly"); setDimension("Overview"); setSearch(""); setScenarios([]); setViews([]); localStorage.removeItem("ep-scenarios"); localStorage.removeItem("ep-views"); };
+  const reset = () => { if((scenarios.length||views.length)&&!window.confirm("Reset filters and clear saved scenarios and views from this browser?"))return;setYear(getDataMode().startsWith("IMPORTED")?String(Math.max(...provider.getObservations().map(o=>o.year))):"2025"); setRegion("All India"); setState("All states"); setCategory("All categories"); setStatus("All statuses"); setPeriodView("Monthly"); setDimension("Overview"); setSearch(""); setScenarios([]); setViews([]); localStorage.removeItem("ep-scenarios"); localStorage.removeItem("ep-views"); };
   const saveScenario = (next: any[]) => { setScenarios(next); localStorage.setItem("ep-scenarios", JSON.stringify(next)); };
   const saveView = () => { const next = [...new Set([...views, `${area} · ${dimension} · ${year} · ${region} · ${state}`])]; setViews(next); localStorage.setItem("ep-views", JSON.stringify(next)); };
   const navigateArea = (next: string) => { setArea(next); setMobile(false); if (next === "Data & Administration") setTool("Data quality"); };

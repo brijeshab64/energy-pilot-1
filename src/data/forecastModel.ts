@@ -47,7 +47,7 @@ function fit(series: MonthlyValue[]) {
   const denominator = x.reduce((sum, value) => sum + (value - meanX) ** 2, 0);
   const slope = denominator ? x.reduce((sum, value, index) => sum + (value - meanX) * (y[index] - meanY), 0) / denominator : 0;
   const intercept = meanY - slope * meanX;
-  return { seasonal, slope, intercept, origin: recent[0].period, recentLength: recent.length };
+  return { seasonal, slope, intercept, recentLength: recent.length };
 }
 
 function addMonths(year: number, month: number, count: number) {
@@ -68,7 +68,7 @@ function forecastFrom(series: MonthlyValue[], count: number): ForecastPoint[] {
 }
 
 export function makeForecast(series: MonthlyValue[], count: number): ForecastPoint[] {
-  if (series.length < 24) return [];
+  if (series.length < 24 || !isContiguous(series)) return [];
   const history = series.slice(-24).map(row => ({ ...row, kind: "history" as const }));
   return [...history, ...forecastFrom(series, count)];
 }
