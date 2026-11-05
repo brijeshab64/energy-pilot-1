@@ -1,6 +1,6 @@
 export type ConsumerType = "Household" | "Small commercial business" | "Industrial facility";
 export type EnergyProfile = { id: string; label: string; consumerType: ConsumerType; region: string; discom: string; contractDemandKW: number; powerFactor?: number; productionKwhPerUnit?: number };
-export type BillRecord = { id: string; period: string; profileId: string; kwh: number; maxDemandKW?: number; powerFactor?: number; total: number; tariffId: string; source: "Synthetic demo" | "Manual entry" | "CSV import"; fixed: number; energy: number; demand: number; duty: number; surcharge: number; subsidy: number };
+export type BillRecord = { id: string; period: string; profileId: string; kwh: number; maxDemandKW?: number; powerFactor?: number; total: number; tariffId: string; source: "Synthetic demo" | "Manual entry" | "CSV import" | "Uploaded bill"; fixed: number; energy: number; demand: number; duty: number; surcharge: number; subsidy: number };
 export type IntervalReading = { day: number; hour: number; kwh: number; demandKW: number; period: "Off-peak" | "Day" | "Peak" };
 export type TariffPlan = { id: string; name: string; region: string; discom: string; category: ConsumerType; start: string; end: string; currency: "INR"; fixedMonthly: number; slabs: { upto: number; rate: number }[]; demandRate: number; dutyPercent: number; fuelRate: number; subsidy: number; peakRate?: number; offPeakCredit?: number; sourceNote: string };
 
